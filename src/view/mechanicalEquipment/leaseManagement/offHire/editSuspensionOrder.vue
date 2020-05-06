@@ -1,0 +1,457 @@
+<template>
+  <Card style="height: 100%">
+    <div class="textBox">
+      <p class="state" v-if="this.saveStatus===1">状态:完成</p>
+      <p class="state" v-else>状态:<span style="color: red">未完成</span></p>
+      <p class="time">创建日期:{{time}}</p>
+      <p class="name">编制人:{{author}}</p>
+      <P class="left" style="width: 185px">单据编号:{{billNumber}}</P>
+      <div class="right">
+        <Button class="btn">&nbsp打印</Button>
+        <Button class="btn" @click="saveOrder(0)"  v-bind:disabled="this.saveStatus===1">&nbsp临时保存</Button>
+        <Button class="btn" type="primary" @click="saveOrder(1)" v-if="this.saveStatus===1">&nbsp提交</Button>
+        <Button class="btn" type="primary" @click="saveOrder(1)" v-else>&nbsp完成制单</Button>
+      </div>
+      <div class="clear"></div>
+    </div>
+    <Tabs value="name1">
+      <TabPane label="合同基本信息" name="name1">
+        <Row type="flex" justify="center">
+          <Col span="10">
+            <Form ref="information1" :model="information" :rules="ruleInline" :label-width="100">
+              <br><br>
+                <Col span="24">
+                  <FormItem label="停租日期" prop="leaseOffDate">
+                    <DatePicker v-model="information.leaseOffDate" type="date" class="width" format='yyyy-MM-dd'
+                                :transfer="true"></DatePicker>
+                  </FormItem>
+                </Col>
+                <Col span="24">
+                  <FormItem label="合同编号" prop="contractNumber">
+                    <Input v-model="information.contractNumber" class="width" :maxlength="30"></Input>
+                  </FormItem>
+                </Col>
+
+                <Col span="24">
+                  <FormItem label="停租原因" prop="cause">
+                    <Input v-model="information.cause" type="textarea" :autosize="{minRows: 3,maxRows: 5}"
+                           :maxlength="128"
+                           class="width" ></Input>
+                  </FormItem>
+                </Col>
+            </Form>
+          </Col>
+        </Row>
+      </TabPane>
+      <TabPane label="停租清单" name="name3">
+        <br>
+        <ButtonGroup>
+          <Button class="search-btn" type="primary" @click="insertEvent(1)">&nbsp;新增停租设备</Button>
+          <Button class="search-btn" type="error" @click="confirm">&nbsp;批量删除</Button>
+        </ButtonGroup>
+        <br><br>
+        <vxe-table
+          ref="xTable"
+          border
+          height="530"
+          resizable
+          :edit-rules="validRules"
+          class="vxe-table-iview"
+          show-overflow
+          :data="tableData"
+          :edit-config="{trigger: 'click', mode: 'row'}"
+        >
+          <vxe-table-column type="selection" width="60"></vxe-table-column>
+          <vxe-table-column type="index" width="50">
+            <template v-slot:header="{ column }">
+              <span>#</span>
+            </template>
+          </vxe-table-column>
+          <vxe-table-column field="name" title="设备名称" :edit-render="{name: 'input'}"></vxe-table-column>
+          <vxe-table-column field="model" title="设备型号" :edit-render="{name: 'input'}"></vxe-table-column>
+          <vxe-table-column field="count" title="租赁数量" :edit-render="{name: 'input'}"></vxe-table-column>
+        </vxe-table>
+      </TabPane>
+      <TabPane label="附件">
+          <br>
+          <Upload
+            ref="uploadw"
+            :headers="headers"
+            :show-upload-list="false"
+            :before-upload="handleUpload"
+            :on-success="succeeded"
+            name="files"
+            :on-error="uploadFailure"
+            :format="['jpg','jpeg','png']"
+            :on-format-error="handleFormatError"
+            multiple
+            :action="`${baseUrl}/pcm/equipments/rent_stop/bill/attachments`">
+            <Form
+              :label-width="100"
+              inline
+              class="top20">
+                <Button icon="ios-cloud-upload-outline" type="primary">选择资质图片文件</Button>
+            </Form>
+          </Upload>
+        <br>
+        <Table
+          ref="selection"
+          border
+          :columns="columns"
+          :data="pictureData">
+        </Table>
+      </TabPane>
+    </Tabs>
+    <bigImg v-if="showImg" @clickit="viewImg" :imgSrc="imgSrc"></bigImg>
+  </Card>
+</template>
+
+<script>
+  import '@/view/financial/budgeting/offerBudget/state.less'
+  import {paramsValidate, isDataSuccess, formatTime, getToken,getRealname} from '@/libs/util'
+  import {mapMutations} from 'vuex' // 关闭页面
+  import {deleteImgData, getDataEcho, editData, deleteEquipment} from '@/api/leaseManagement/offHire'
+  import axios from '@/libs/api.request'
+  import bigImg from '@/components/big-img/Bigimg.vue'
+
+  export default {
+    name: "editSuspensionOrder",
+    components: {
+      bigImg
+    },
+    data() {
+      return {
+        saveStatus:'',
+        time:'',
+        billNumber:'',
+        author: getRealname(),
+        itemId: '',
+        showImg: false,
+        imgSrc: '',
+        baseUrl: axios.baseUrl,
+        headers: {Authorization: 'Bearer ' + getToken()},
+        files: [],
+        information: {
+          leaseOffDate: '',
+          contractNumber: '',
+          cause: '',
+        },
+        tableData: [],
+        ruleInline: {
+          leaseOffDate: [
+            {required: true, type: 'date', message: '请选择签订时间', trigger: 'change'}
+          ],
+          contractNumber: [
+            {required: true, message: '请选择合同编号', trigger: 'blur'},
+          ],
+        },
+        validRules:{
+          name: [
+            {required: true, type: 'string', message: '请输入产品名称'}
+          ],
+          model: [
+            {required: true, type: 'string', message: '请输入设备型号'}
+          ],
+          count: [
+            {required: true, type: 'string', message: '请输入租赁数量'},
+            {type: 'number', max: 10000, message: '系统最大数不能超过10000'},
+            {pattern: /^\+?[1-9]\d*$/, message: '请输入正整数'},
+          ],
+        },
+        pictureData: [],
+        columns: [
+          {
+            type: 'index',
+            width: 50,
+            align: 'center',
+          },
+          {
+            title: '资质',
+            key: 'imgUrl',
+            render: (h, params) => {
+              return h('img', {
+                style: {//设置样式
+                  width: '50px',
+                  height: '50px',
+                  'border-radius': '5%'
+                },
+                attrs: {//设置属性
+                  src: params.row.imgUrl
+                }
+              });
+            }
+          },
+          {
+            title: '资质名称',
+            key: 'name',
+
+          },
+          {
+            title: '上传人',
+            key: 'uploadUser',
+            width: 100
+          },
+          {
+            title: '上传日期',
+            key: 'uploadDate',
+            width: 120
+          },
+          {
+            title: '操作',
+            width: 130,
+            key: 'handle',
+            fixed: 'right',
+            render: (h, params, vm) => {
+              return [
+                h('Button', {
+                  props: {
+                    size: 'small'
+                  },
+                  on: {
+                    'click': () => {
+                      this.showImg = true;
+                      // 获取当前图片地址
+                      console.log(params.row)
+                      this.imgSrc = params.row.imgUrl;
+                    }
+                  },
+                  style: {
+                    marginRight: '5px'
+                  }
+                }, '查看'),
+                h('Poptip', {
+                  props: {
+                    confirm: true,
+                    transfer: true,
+                    title: '你确定要删除吗?',
+                    placement: 'left-end',
+                    size: 'small'
+                  },
+                  on: {
+                    'on-ok': () => {
+                      console.log(params.row)
+                      this.deleteImg(params.row)
+                    }
+                  }
+                }, [
+                  h('Button',
+                    {
+                      props: {
+                        type: 'error',
+                        size: 'small'
+                      }
+                    }, '删除')]),
+              ]
+            }
+          }
+        ],
+      }
+    },
+    methods: {
+      //  关闭页面方法
+      ...mapMutations(['closeTag']),
+      close() {
+        this.closeTag({
+          name: 'editSuspensionOrder'
+        })
+      },
+      //添加表格一行
+      insertEvent(row) {
+        this.$refs.xTable.insertAt(row)
+      },
+      saveOrder(state) {
+        console.log(this.files)
+        //获取表格数据
+        const addTableData = this.$refs.xTable.getTableData().fullData
+        const arryData = []
+        if (addTableData.length !== 0) {
+          addTableData.forEach(v => {
+            let addTable = {}
+            addTable.name = v.name
+            addTable.id = v.id
+            addTable.model = v.model
+            addTable.count = v.count
+            arryData.push(addTable)
+          })
+        }
+        const imgDataId = []
+        if (this.pictureData.length !== 0) {
+          this.pictureData.forEach(v => {
+            imgDataId.push(v.id)
+          })
+        }
+        this.$refs.information1.validate((valid) => {
+          if (valid) {
+            this.$refs.xTable.validate(valids => {
+              if (valids) {
+                const data = {
+                  saveStatus: state,
+                  id:this.itemId,
+                  projectId: JSON.parse(localStorage.getItem("projectId")).id,
+                  stopDate: formatTime(this.information.leaseOffDate),
+                  billNumber: this.billNumber,
+                  contractNumber: this.information.contractNumber,
+                  reason: this.information.cause,
+                  equipmentVos: arryData,
+                  attachmentIds: imgDataId
+                }
+                console.log(data)
+                editData(data).then(res => {
+                  const data = res.data
+                  let status = isDataSuccess(res)
+                  switch (status) {
+                    case 1:
+                      this.$Message.error('服务器繁忙请稍后')
+                      break;
+                    case 2:
+                      this.$Message.error(data.msgContent)
+                      break;
+                    default:
+                      this.$Message.success(data.msgContent)
+                      this.close()
+                      this.$router.push({name: 'offHire'});
+                      break
+                  }
+                })
+              }
+            })
+          }else {
+            this.$Message.error('请填写基本信息')
+          }
+        })
+      },
+      //删除设备
+      deleteEquipmentdata() {
+        console.log(this.$refs.xTable.getSelectRecords())
+        const selectData = this.$refs.xTable.getSelectRecords()
+        const dataId = {'ids': []}
+        if (selectData.length !== 0) {
+          selectData.forEach(v => {
+            if (v.id) {
+              dataId.ids.push(v.id)
+            }
+          })
+          deleteEquipment(dataId).then(res => {
+            const data = res.data
+            let status = isDataSuccess(res)
+            switch (status) {
+              case 1:
+                this.$Message.error('服务器繁忙请稍后')
+                break;
+              case 2:
+                this.$Message.error(data.msgContent)
+                break;
+              default:
+                break
+            }
+          })
+        }
+        console.log(dataId)
+      },
+      //删除
+      confirm() {
+        const checkedData = this.$refs.xTable.getSelectRecords()
+        if (checkedData.length !== 0) {
+          this.$Modal.confirm({
+            title: '删除选中机械设备',
+            content: '<p>你确定要删除选中机械用品吗?</p>',
+            onOk: () => {
+              this.deleteEquipmentdata()
+              this.$refs.xTable.removeSelecteds()
+            },
+          });
+        } else {
+          this.$Message.error('请选择删除的产品')
+        }
+      },
+      //删除图片
+      deleteImg(row) {
+        deleteImgData(row.id).then(res => {
+          const data = res.data
+          let status = isDataSuccess(res)
+          switch (status) {
+            case 1:
+              this.$Message.error('服务器繁忙请稍后')
+              break;
+            case 2:
+              this.$Message.error(data.msgContent)
+              break;
+            default:
+              this.pictureData.splice(row._index, 1)
+              this.$Message.success(data.msgContent)
+              break
+          }
+        })
+      },
+      viewImg() {
+        this.showImg = false;
+      },
+      //图片上传成功后的回调
+      succeeded(res, files) {
+        console.log(res.msgData[0])
+        this.pictureData.push(res.msgData[0])
+      },
+      //图片上传失败后的回调
+      uploadFailure(error, files) {
+        console.log(error)
+        console.log(files)
+      },
+      //上传图片验证
+      handleFormatError(files) {
+        this.$Message.warning({
+          content: files.name + '文件类型不正确,请选择图片',
+          duration: 3
+        })
+      },
+      //再次点击上传之前，清空之前已上传文件
+      handleUpload(files) {
+        this.files.push(files);
+      },
+      getEcho() {
+        getDataEcho(this.itemId).then(res => {
+          const data = res.data;
+          let status = isDataSuccess(res);
+          switch (status) {
+            case 1:
+              this.$Message.error("服务器繁忙请稍后");
+              break;
+            case 2:
+              this.$Message.error(data.msgContent);
+              break;
+            default:
+              console.log(data)
+              this.saveStatus=data.msgData.saveStatus
+              this.time=data.msgData.createDate
+              this.information.leaseOffDate =new Date(data.msgData.stopDate)
+              this.billNumber = data.msgData.billNumber
+              this.information.contractNumber = data.msgData.contractNumber
+              this.information.cause = data.msgData.reason
+              this.tableData = data.msgData.equipmentVoList
+              //图片表格
+              this.pictureData = data.msgData.attachmentVoList
+              break;
+          }
+        })
+      },
+    },
+    activated() {
+      this.itemId = sessionStorage.getItem('editSuspensionOrderId')
+       this.getEcho()
+    }
+  }
+</script>
+
+<style scoped lang="less">
+  .width{
+    width: 80%;
+  }
+  .search-btn {
+    margin-left: 10px;
+  }
+
+  .left {
+    float: left;
+  }
+
+
+</style>

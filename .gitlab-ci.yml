@@ -1,0 +1,26 @@
+stages:
+  - build
+  - run
+  - deploy
+.web-build-job: &web-build-job
+  script:
+    - cnpm install
+    - cnpm run build
+
+web-build:
+  stage: build
+  tags:
+    - web
+  script:
+    - cnpm install 
+    - cnpm run build
+    - docker build -t ert-web .
+
+    
+web-deploy:
+  stage: deploy
+  tags:
+    - web
+  script:
+    - chmod 777 startup.sh
+    - sh startup.sh

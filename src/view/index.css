@@ -1,0 +1,33 @@
+.center {
+  text-align: center;
+  line-height: 300px;
+}
+.btn {
+  padding: 30px;
+  font-size: 18px;
+  font-weight: bold;
+}
+.hs {
+  position: absolute;
+  left: 10px;
+  bottom: 10px;
+}
+.ivu-row {
+  margin-top: 20px;
+}
+
+.ivu-card-bordered {
+  height: 300px;
+}
+.top {
+  margin-top: 30px;
+}
+.btnPadding20 {
+  padding: 20px;
+}
+.btnLine135 {
+  line-height: 135px;
+}
+.btnLine90 {
+  line-height: 90px;
+}
